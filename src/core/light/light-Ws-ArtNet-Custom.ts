@@ -2,26 +2,23 @@ import      { dmxTransitionInterval, getSteps }         from "@utils/transitions
 import      { haEntities, haServices }                  from "../ha.constants";
 import      { listenWebSocket, sendMessageToWebSocket } from "@infra/websocket/websocket";
 import type { LightArguments }                          from "./light.types";
+import type { LightWsArtNet }                           from "./light-Ws-ArtNet";
 import type { SwitchState }                             from "../ha.types";
+import type { SwitchWsArtNet }                          from "@core/switch/Switch-Ws-ArNet";
 import type { UpdateFromSocketArgs }                    from "@infra/websocket/websocket.type";
+import      { getEntity }                               from "@core/entities";
 import      { payload }                                 from "@core/ha.constants";
 import      { setDmx }                                  from "@infra/artnet/artnet";
 
-export type LightWsArtNet = {
-  currentValue      : number
-  updateAndPropagate: Function
-  useAgent          : Function
-}
-
-export function lightWsArtNet(args: LightArguments):LightWsArtNet {
-  let context:any; //TODO change type
-  const deviceId        = args.deviceId;
-  const dmxAddress      = args.dmx;
-  const max             = args.max ? Math.round((255 * args.max) / 100) : undefined;
-  let   isAgentDrived   = false;
-  let   transitionSteps = [] as number[];
-  let   transtion: NodeJS.Timer | undefined;
-  let   value:number;
+export function lightWsArtNetCustom(args: LightArguments):LightWsArtNet {
+  const deviceId   = args.deviceId;
+  const dmxAddress = args.dmx;
+  const max        = args.max ? Math.round((255 * args.max) / 100) : undefined;
+  let context: any;  //TODO change type
+  let isAgentDrived   = false;
+  let transitionSteps = [] as number[];
+  let transtion: NodeJS.Timer | undefined;
+  let value    : number;
 
   listenWebSocket(haEntities.LIGHT + "." + deviceId, updateFromSocket);
 
@@ -41,6 +38,8 @@ export function lightWsArtNet(args: LightArguments):LightWsArtNet {
   }
 
   function updateValueWithTransition(newValue: number) {
+    const powerRelay = getEntity(haEntities.SWITCH, "cellier_relais_puissance_eclairage") as SwitchWsArtNet;
+    powerRelay.updateAndPropagate(true);
     if (newValue !== value) {
       clearInterval(transtion);
       transitionSteps = getSteps(value, newValue);
@@ -79,6 +78,7 @@ export function lightWsArtNet(args: LightArguments):LightWsArtNet {
   }
 
   function updateAndPropagate(newValue: number, fromAgent=false) {
+
     if (newValue === value)          return;
     if (fromAgent && !isAgentDrived) return;
     value = newValue;

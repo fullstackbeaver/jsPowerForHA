@@ -2,10 +2,11 @@ import type { BaseImportedDevice, DevicesFromCSV } from "./device/device.type";
 import      { csvToJson, writeConfig }             from "@infra/files/files";
 import type { HaEntities }                         from "./ha.types";
 import type { LightFromCSV }                       from "./light/light.types";
+import type { LightWsArtNet }                      from "./light/light-Ws-ArtNet";
+import type { SwitchWsArtNet }                     from "./switch/Switch-Ws-ArNet";
 import      { convertToSnakeCase }                 from "src/utils/stringAdapter";
 import      { haEntities }                         from "./ha.constants";
 import      { readdir }                            from "node:fs/promises";
-import type { SwitchFromCSV } from "./switch/switch.type";
 // import type { SwitchFromCSV }                      from "./switch/switch.type";
 // import      { lightWsArtNet }                      from "./light/light-Ws-ArtNet";
 // import      { parse }                              from "node:path";
@@ -31,14 +32,13 @@ type RegisteredEntity = {
   }
 }
 
-const csvPath      = process.cwd() + process.env.CSV_FOLDER;
-const entitiesList = {
-  [haEntities.COVER] : {} as { [key: string]: Function },
-  [haEntities.LIGHT] : {} as { [key: string]: Function },
-  [haEntities.SWITCH]: {} as { [key: string]: Function }
-};
+type AvailableEntities = LightWsArtNet | SwitchWsArtNet
 
-const entities = {} as RegisteredEntity;
+type Entities = { [key: string]: AvailableEntities }
+
+const csvPath         = __dirname+"/../.." + process.env.CSV_FOLDER;
+const entities        = {} as {[key:string]:Entities};
+const entitiesFactory = {} as RegisteredEntity;
 
 async function getFilesAsJSON() { //TODO use bun FS instead
   const files = {} as {[key:string]:unknown};
@@ -48,7 +48,9 @@ async function getFilesAsJSON() { //TODO use bun FS instead
       .split(" - ")[1]
       .split(".")[0]
       .toLowerCase();
-    files[filename] = await csvToJson(csvPath + "/" + file);
+
+    files[filename] = await csvToJson(csvPath + file);
+
   }
   return files as DevicesFromCSV;
 }
@@ -81,18 +83,14 @@ function getUniqueId({ area, room, type }:BaseImportedDevice): string {
 }
 
 export async function importEntities(createConfig: boolean) {
-  // console.log(await getFilesAsJSON());
 
   function addToWrite(haType:haEntities, value: BaseImportedDevice) { //TODO mettre LES bons types au lieu de BaseImportedDevice
-    console.log("addToWrite", haType, value);
     if (!createConfig) return;
-    console.log("addToWrite", haType, "1");
 
     if (!filesToWrite[haType]) filesToWrite[haType] = [];
 
-    const templateFn = entities[value.entity]?.useTemplate;
+    const templateFn = entitiesFactory[value.entity]?.useTemplate;
     if (templateFn === undefined) throw new Error(`no template for ${value.entity}`);
-    console.log("addToWrite", haType, "2");
 
     filesToWrite[haType].push(templateFn({
       ...value,
@@ -100,10 +98,10 @@ export async function importEntities(createConfig: boolean) {
     }));
   }
 
-  function addEntity(haType:HaEntities, key:string, value:any) {
-    console.log("addEntity", haType, key, value);
+  function addEntity(haType:HaEntities, id:string, value:any) {
     // if (!haType in entitiesList) return;
-    entitiesList[haType][key] = newEntity(value);
+    if (!entities[haType]) entities[haType] = {};
+    entities[haType][id] = newEntity(value);
     addToWrite(haType, value);
   }
 
@@ -111,7 +109,9 @@ export async function importEntities(createConfig: boolean) {
 
   for (const [haType, entries] of Object.entries(await getFilesAsJSON())) {
 
-    for (const [key, value] of Object.entries(entries)) {
+    for (const value of Object.values(entries)) {
+      const deviceId = (value as any).deviceId;
+      if (deviceId === undefined || deviceId === "") continue;
       switch (haType) {
         case haEntities.COVER:
           // console.log("Cover", key, value);
@@ -121,52 +121,48 @@ export async function importEntities(createConfig: boolean) {
           break;
 
         case haEntities.LIGHT:
-          if ((value as LightFromCSV).deviceId === "") break;
           // entitiesList[haEntities.LIGHT][key] = newEntity(reformated);
           // addToWrite(haEntities.LIGHT, lightWsTemplate, reformated );
-          addEntity(haEntities.LIGHT, key, {
+          addEntity(haEntities.LIGHT, deviceId, {
             ...value as LightFromCSV,
             dmx: parseInt((value as LightFromCSV).dmx)
           });
           break;
 
         case haEntities.SWITCH:
-          console.log("Switch", (value as SwitchFromCSV).deviceId);
-
-          // entitiesList[haEntities.SWITCH][key] = newEntity(value as SwitchArguments);
-          // addToWrite(haEntities.SWITCH, switchWsTemplate, value as SwitchFromCSV);
-          addEntity(haEntities.SWITCH, key, value);
+          addEntity(haEntities.SWITCH, deviceId, value);
           break;
 
         default:
           throw new Error(`string entity type: ${haType}`);
       }
     }
+  }
 
-    // console.clear();
-    // console.log(entitiesList);
-    if (createConfig) {
-      console.log("creating configuration files...", filesToWrite);
-      for (const [haType, value] of Object.entries(filesToWrite)) {
-        console.log(haType, value.length);
-        if (value.length === 0) continue;
-        await writeConfig(haType as haEntities, value, haType !== haEntities.COVER);
-      }
-      console.log("configuration files created !");
-      process.exit(0);
+  if (createConfig) {
+    console.log("creating configuration files...", filesToWrite);
+    for (const [haType, value] of Object.entries(filesToWrite)) {
+      console.log(haType, value.length);
+      if (value.length === 0) continue;
+      await writeConfig(haType as haEntities, value, haType !== haEntities.COVER);
     }
+    console.log("configuration files created !");
+    process.exit(0);
   }
 }
 
 function newEntity(args:any) {
-  console.log("newEntity", args);
   const entityType = args.entity;
   if (!entityType) throw new Error("entity type is required");
-  const entity = entities[entityType];
-  if ( entity === undefined) throw new Error(`entity type ${entityType} doe's not exist`);
-  return entity.create(args);
+  const factory = entitiesFactory[entityType];
+  if ( factory === undefined) throw new Error(`entity type ${entityType} doe's not exist`);
+  return factory.create(args);
 }
 
 export function registerEntity(name:string, create:Function, useTemplate:Function) {
-  entities[name] = { create, useTemplate };
+  entitiesFactory[name] = { create, useTemplate };
+}
+
+export function getEntity(haType:string, name:string) {
+  return entities[haType][name];
 }

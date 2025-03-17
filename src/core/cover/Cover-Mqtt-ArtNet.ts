@@ -1,9 +1,9 @@
 import      { convertFromPercent, convertToPercent } from "src/utils/stateAdapter";
 import      { publish, subscribe, unsubscribe }      from "@infra/mqtt/mqtt";
-import      { Device }                               from "../Device";
-import type { DeviceArguments }                      from "../Device";
-import      { HaEntities }                           from "../entities";
-import      { payload }                              from "@core/constants";
+import      { Device }                               from "../device/Device";
+import type { DeviceArguments }                      from "../device/Device";
+import      { haEntities }                           from "../entities";
+import      { payload }                              from "@core/ha.constants";
 import      { setDmx }                               from "@infra/artnet/artnet";
 
 interface CoverArguments extends DeviceArguments {
@@ -32,10 +32,10 @@ export class CoverMqttArtNet extends Device{
   };
 
   constructor( name: string, args:object ) {
-    super({ name });
+    super(deviceId);
 
     const { dmxActive, dmxDirection, movingDuration } = args as CoverArguments;
-    this.baseTopic      = "homeassistant/"+HaEntities.COVER+"/"+this.name;
+    this.baseTopic      = "homeassistant/"+haEntities.COVER+"/"+this.name;
     this.dmxActive      = dmxActive;
     this.dmxDirection   = dmxDirection;
     this.movingDuration = movingDuration;

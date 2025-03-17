@@ -8,7 +8,7 @@ import { readFileSync }       from "fs";
  *
  * @param {string} filePath - The path to the CSV file to read.
  *
- * @return {string} A JSON string representing the content of the CSV file.
+ * @return {object[]} A JSON string representing the content of the CSV file.
  */
 export function csvToJson(filePath: string): string {
   const fileContent = readFileSync(filePath, "utf-8");
@@ -21,7 +21,6 @@ export function csvToJson(filePath: string): string {
       return obj;
     }, {});
   });
-
   return JSON.parse(JSON.stringify(jsonData, null, 2));
 }
 
@@ -47,5 +46,6 @@ export async function writeConfig(filename: haEntities, content: string[], platf
   ${plural[filename]}:`
     : `- ${plural[filename]}:`
   );
-  await Bun.write(process.cwd() + process.env.YAML_FOLDER + "/" + filename + ".yaml", content.join("\n"));
+  console.log(process.cwd() + process.env.YAML_FOLDER + filename + ".yaml", content.join("\n"));
+  await Bun.write(process.cwd() + process.env.YAML_FOLDER + filename + ".yaml", content.join("\n"));
 }

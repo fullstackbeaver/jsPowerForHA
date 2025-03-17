@@ -1,25 +1,31 @@
-import      { haEntities, haServices, payload } from "../ha.constants";
-import type { SwitchArguments }                 from "./switch.type";
-import type { UpdateFromSocketArgs }            from "@infra/websocket/websocket.type";
-import      { listenWebSocket }                 from "@infra/websocket/websocket";
-import      { setDmx }                          from "@infra/artnet/artnet";
+import      { haEntities, haServices, payload }         from "../ha.constants";
+import      { listenWebSocket, sendMessageToWebSocket } from "@infra/websocket/websocket";
+import type { SwitchArguments }                         from "./switch.type";
+import type { UpdateFromSocketArgs }                    from "@infra/websocket/websocket.type";
+import      { setDmx }                                  from "@infra/artnet/artnet";
 
-export function switchWsArtNet(args:SwitchArguments) {
+export type SwitchWsArtNet = {
+  isOn              : boolean
+  updateAndPropagate: Function
+  useAgent          : Function
+}
+export function switchWsArtNet(args:SwitchArguments):SwitchWsArtNet {
   const { deviceId, dmx } = args;
-  let state : boolean;
+  let   isAgentDrived     = false;
+  let   state : boolean;
 
-  listenWebSocket(haEntities.SWITCH + "." + deviceId, updateFromSocket); //remettre bind(this) ?
+  listenWebSocket(haEntities.SWITCH + "." + deviceId, updateFromSocket);
 
   function updateFromSocket({ newData }: UpdateFromSocketArgs) {
+    const newValue = newData.state === payload.ON;
+    update(newValue);
     return {
-      ...update(newData.state === payload.ON),
-      context: newData.context
+      ...makeMessage(newValue),
+      context: newData.context,
     };
   }
 
-  function update(newValue: boolean) {
-    dmx && setDmx(dmx, newValue ? 255 : 0);
-    state = newValue;
+  function makeMessage(newValue: boolean) {
     return {
       domain        : haEntities.SWITCH,
       service       : newValue ? haServices.TURN_ON : haServices.TURN_OFF,
@@ -29,8 +35,25 @@ export function switchWsArtNet(args:SwitchArguments) {
     };
   }
 
+  function update(newValue: boolean) {
+    dmx && setDmx(dmx, newValue ? 255 : 0);
+    state = newValue;
+  }
+
+  function updateAndPropagate(newValue: boolean, fromAgent=false) {
+    if (newValue === state)          return;
+    if (fromAgent && !isAgentDrived) return;
+    update(newValue);
+    sendMessageToWebSocket(makeMessage(newValue));
+  }
+
+  function useAgent() {
+    isAgentDrived = true;
+  }
+
   return {
     get isOn() { return state; },
-    update,
+    updateAndPropagate,
+    useAgent
   };
 }

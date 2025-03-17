@@ -8,6 +8,7 @@
     "checkUnusedExported": "npx ts-prune",
     "coverage": "c8 --reporter lcov --reporter text --exclude node_modules/ --out-dir coverage bun test",
     "coverage2": "c8 bun test",
+    "make-config": "bun ./src/main generate-ha-files",
     "lint": "eslint --fix",
     "start": "bun dev",
     "test": "bun test",
